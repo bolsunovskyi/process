@@ -1,33 +1,55 @@
 package process
 
 import (
-	"bytes"
+	"io"
+	"io/ioutil"
 	"os/exec"
+
+	"errors"
 )
 
 const (
 	StatusCreated = "created"
 	StatusRunning = "running"
-	StatusExit = "exit"
+	StatusExit    = "exit"
 )
 
 type Process struct {
-	name string
-	args []string
-	stdErr bytes.Buffer
-	stdOut bytes.Buffer
-	status string
-	cmd *exec.Cmd
+	name    string
+	args    []string
+	stdErr  io.ReadWriteSeeker
+	stdOut  io.ReadWriteSeeker
+	status  string
+	cmd     *exec.Cmd
+	exit    chan error
 	Restart bool
-	exit chan error
 }
 
-func (p *Process) StdOut() string {
-	return p.stdOut.String()
+func fileToString(f io.ReadWriteSeeker) (string, error) {
+	f.Seek(0, 0)
+	bytes, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	f.Seek(0, io.SeekEnd)
+
+	return string(bytes), nil
 }
 
-func (p *Process) StdErr() string {
-	return p.stdErr.String()
+func (p *Process) Name() string {
+	return p.name
+}
+
+func (p *Process) Args() []string {
+	return p.args
+}
+
+func (p *Process) StdOut() (string, error) {
+	return fileToString(p.stdOut)
+}
+
+func (p *Process) StdErr() (string, error) {
+	return fileToString(p.stdErr)
 }
 
 func (p *Process) watch() {
@@ -55,16 +77,23 @@ func (p *Process) Wait() error {
 	return <-p.exit
 }
 
-func (p *Process) Kill() error {
-	p.Restart = false
+func (p *Process) Status() string {
+	return p.status
+}
 
-	return p.cmd.Process.Kill()
+func (p *Process) Terminate() error {
+	if p.status == StatusRunning {
+		p.Restart = false
+		return p.cmd.Process.Kill()
+	}
+
+	return errors.New("process is not running")
 }
 
 func (p *Process) Start() error {
 	p.cmd = exec.Command(p.name, p.args...)
-	p.cmd.Stderr = &p.stdErr
-	p.cmd.Stdout = &p.stdOut
+	p.cmd.Stderr = p.stdErr
+	p.cmd.Stdout = p.stdOut
 
 	if err := p.cmd.Start(); err != nil {
 		return err
@@ -77,14 +106,14 @@ func (p *Process) Start() error {
 	return nil
 }
 
-func CreateProcess(name string, args ...string) (*Process, error) {
-	p := Process{
-		name: name,
-		args: args,
-		status: StatusCreated,
+func CreateProcess(stdOut, stdErr io.ReadWriteSeeker, name string, args ...string) Process {
+	return Process{
+		name:    name,
+		args:    args,
+		status:  StatusCreated,
 		Restart: true,
-		exit: make(chan error),
+		exit:    make(chan error),
+		stdErr:  stdErr,
+		stdOut:  stdOut,
 	}
-
-	return &p, nil
 }

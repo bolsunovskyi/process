@@ -1,15 +1,23 @@
 package process
 
 import (
+	"bytes"
+	"os"
 	"testing"
 	"time"
 )
 
+type BufferSeeker struct {
+	bytes.Buffer
+}
+
+func (BufferSeeker) Seek(offset int64, whence int) (int64, error) {
+	return 0, nil
+}
+
 func TestCreateProcessNoRestart(t *testing.T) {
-	p, err := CreateProcess("uname", "-r")
-	if err != nil {
-		t.Fatal(err)
-	}
+	var stdOut, stdErr BufferSeeker
+	p := CreateProcess(&stdOut, &stdErr, "uname", "-r")
 	p.Restart = false
 
 	if err := p.Start(); err != nil {
@@ -20,33 +28,134 @@ func TestCreateProcessNoRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := p.StdOut()
-	t.Log(out)
-	if out == "" {
+	output, err := p.StdOut()
+	if err != nil {
+		t.Fatal("unable to get stdout")
+	}
+	t.Log(output)
+
+	if output == "" {
 		t.Fatal("empty stdout")
+	}
+
+	if err := p.Terminate(); err == nil {
+		t.Fatal("no error on trying to kill stopped process")
 	}
 }
 
-func TestCreateProcessRestart(t *testing.T) {
-	p, err := CreateProcess("uname", "-r")
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestCreateProcessStdErr(t *testing.T) {
+	var stdOut, stdErr BufferSeeker
+	p := CreateProcess(&stdOut, &stdErr, "date", "-x")
+	p.Restart = false
 
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Second)
-
-	if err := p.Kill(); err != nil {
-		t.Fatal(err)
+	if err := p.Wait(); err == nil {
+		t.Fatal("no error on exit status 1")
 	}
 
-	out := p.StdOut()
-	t.Log(out)
-	if out == "" {
-		t.Fatal("empty stdout")
+	output, err := p.StdErr()
+	if err != nil {
+		t.Fatal("unable to get stderr")
+	}
+	t.Log(output)
+	if output == "" {
+		t.Fatal("empty stderr")
 	}
 }
 
+func TestCreateProcessRestart(t *testing.T) {
+	var stdOut, stdErr BufferSeeker
+	p := CreateProcess(&stdOut, &stdErr, "sleep", "1")
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(time.Millisecond * 2500)
+
+	if p.Status() != StatusRunning {
+		t.Fatal("process is not running")
+	}
+
+	if err := p.Terminate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateProcessFailure(t *testing.T) {
+	p := CreateProcess(nil, nil, "mike", "bolsunovskyi")
+
+	if err := p.Start(); err == nil {
+		t.Fatal("no error on trying to start no existing binary")
+	}
+}
+
+func TestCreateProcessFiles(t *testing.T) {
+	stdErr, err := os.Create("err101.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdOut, err := os.Create("out101.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := CreateProcess(stdOut, stdErr, "uname", "-r")
+	p.Restart = false
+
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := p.StdOut()
+	if err != nil {
+		t.Fatal("unable to get stdout")
+	}
+	t.Log(output)
+
+	if output == "" {
+		t.Fatal("empty stdout")
+	}
+
+	p = CreateProcess(stdOut, stdErr, "date", "-x")
+	p.Restart = false
+
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.Wait(); err == nil {
+		t.Fatal("no error on exit status 1")
+	}
+
+	output, err = p.StdErr()
+	if err != nil {
+		t.Fatal("unable to get stderr")
+	}
+	t.Log(output)
+	if output == "" {
+		t.Fatal("empty stderr")
+	}
+
+	if err := stdErr.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := stdOut.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove("err101.txt"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove("out101.txt"); err != nil {
+		t.Fatal(err)
+	}
+}
