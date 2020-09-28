@@ -20,6 +20,14 @@ func TestCreateProcessNoRestart(t *testing.T) {
 	p := CreateProcess(&stdOut, &stdErr, "uname", "-r")
 	p.Restart = false
 
+	if p.Name() != "uname" {
+		t.Fatal("wrong name in getter")
+	}
+
+	if len(p.Args()) == 0 || p.Args()[0] != "-r" {
+		t.Fatal("wrong args in getter")
+	}
+
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -73,10 +81,23 @@ func TestCreateProcessRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	started := p.Started()
+	pid1 := p.PID()
+
 	time.Sleep(time.Millisecond * 2500)
 
 	if p.Status() != StatusRunning {
 		t.Fatal("process is not running")
+	}
+
+	if started == p.Started() {
+		t.Fatal("started time not changed")
+	}
+
+	pid2 := p.PID()
+
+	if pid1 == pid2 {
+		t.Fatal("pid is not changed")
 	}
 
 	if err := p.Terminate(); err != nil {

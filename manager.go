@@ -10,17 +10,19 @@ import (
 )
 
 type Manager struct {
-	processes  map[int]ManagerProcess
+	processes  []*ManagerProcess
 	logsFolder string
 	signals    chan os.Signal
 }
 
 type ManagerProcess struct {
 	Process
-
 	logPath string
 	logFile *os.File
-	PID     int
+}
+
+func (m *ManagerProcess) LogPath() string {
+	return m.logPath
 }
 
 func (m *Manager) AddProcess(name string, args ...string) (*ManagerProcess, error) {
@@ -31,52 +33,50 @@ func (m *Manager) AddProcess(name string, args ...string) (*ManagerProcess, erro
 	}
 
 	p := CreateProcess(logFile, logFile, name, args...)
-	if err := p.Start(); err != nil {
+
+	mp := ManagerProcess{
+		Process: *p,
+
+		logPath: logFilePath,
+		logFile: logFile,
+	}
+
+	if err := mp.Start(); err != nil {
 		return nil, err
 	}
 
-	mp := ManagerProcess{
-		Process: p,
-		logPath: logFilePath,
-		logFile: logFile,
-		PID:     p.cmd.Process.Pid,
-	}
-
-	m.processes[mp.PID] = mp
+	m.processes = append(m.processes, &mp)
 
 	return &mp, nil
 }
 
-func (m *Manager) GetProcesses() map[int]ManagerProcess {
+func (m *Manager) GetProcesses() []*ManagerProcess {
 	return m.processes
 }
 
 func (m *Manager) TerminateProcess(pid int) error {
-	proc, ok := m.processes[pid]
-	if !ok {
-		return errors.New("process with such pid not found")
-	}
+	for i, proc := range m.processes {
+		if proc.PID() == pid {
+			if err := proc.Terminate(); err != nil {
+				return err
+			}
 
-	if err := proc.Terminate(); err != nil {
-		if err.Error() != "os: process already finished" {
-			return err
+			if err := proc.logFile.Close(); err != nil {
+				return err
+			}
+
+			m.processes = append(m.processes[:i], m.processes[i+1:]...)
+
+			return nil
 		}
 	}
 
-	if err := proc.logFile.Close(); err != nil {
-		return err
-	}
-
-	delete(m.processes, pid)
-
-	return nil
+	return errors.New("process with such pid not found")
 }
 
 func (m *Manager) ShutDown() error {
-	for pid := range m.processes {
-		if err := m.TerminateProcess(pid); err != nil {
-			return err
-		}
+	for _, proc := range m.processes {
+		proc.Terminate()
 	}
 
 	return nil
@@ -96,11 +96,11 @@ func CreateManager(logsFolder string) (*Manager, error) {
 
 	manager := Manager{
 		logsFolder: logsFolder,
-		processes:  make(map[int]ManagerProcess),
+		processes:  []*ManagerProcess{},
 		signals:    make(chan os.Signal, 1),
 	}
 
-	signal.Notify(manager.signals, os.Interrupt)
+	signal.Notify(manager.signals, os.Interrupt, os.Kill)
 
 	go manager.listenSignals()
 

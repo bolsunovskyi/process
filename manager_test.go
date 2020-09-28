@@ -20,6 +20,28 @@ func TestCreateManager(t *testing.T) {
 	}
 }
 
+func TestManagerProcess_Restart(t *testing.T) {
+	manager, err := CreateManager("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proc, err := manager.AddProcess("sleep", "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid1 := proc.PID()
+	t.Logf("pid1 %d\n", pid1)
+
+	time.Sleep(time.Millisecond * 2500)
+
+	pid2 := proc.PID()
+	if pid1 == pid2 {
+		t.Logf("p1: %d, pd2: %d", pid1, pid2)
+		t.Fatal("pid is not changed")
+	}
+}
+
 func TestManager_GetProcesses(t *testing.T) {
 	manager, err := CreateManager("logs")
 	if err != nil {
@@ -32,8 +54,19 @@ func TestManager_GetProcesses(t *testing.T) {
 	}
 
 	allProcs := manager.GetProcesses()
-	if _, ok := allProcs[proc.PID]; !ok {
-		t.Fatal("processes not found in all processes map")
+	found := false
+	for _, p := range allProcs {
+		if p.PID() == proc.PID() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("processes not found in all processes list")
+	}
+
+	if err := manager.TerminateProcess(allProcs[0].PID()); err != nil {
+		t.Fatal(err)
 	}
 }
 

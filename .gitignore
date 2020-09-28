@@ -1,3 +1,5 @@
 .idea/
 example_process/example
 coverage.out
+cmd/logs
+cmd/cmd

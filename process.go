@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os/exec"
+	"time"
 
 	"errors"
 )
@@ -22,6 +23,7 @@ type Process struct {
 	status  string
 	cmd     *exec.Cmd
 	exit    chan error
+	started time.Time
 	Restart bool
 }
 
@@ -42,6 +44,10 @@ func (p *Process) Name() string {
 
 func (p *Process) Args() []string {
 	return p.args
+}
+
+func (p *Process) Started() time.Time {
+	return p.started
 }
 
 func (p *Process) StdOut() (string, error) {
@@ -77,6 +83,10 @@ func (p *Process) Wait() error {
 	return <-p.exit
 }
 
+func (p *Process) PID() int {
+	return p.cmd.Process.Pid
+}
+
 func (p *Process) Status() string {
 	return p.status
 }
@@ -100,14 +110,15 @@ func (p *Process) Start() error {
 	}
 
 	p.status = StatusRunning
+	p.started = time.Now()
 
 	go p.watch()
 
 	return nil
 }
 
-func CreateProcess(stdOut, stdErr io.ReadWriteSeeker, name string, args ...string) Process {
-	return Process{
+func CreateProcess(stdOut, stdErr io.ReadWriteSeeker, name string, args ...string) *Process {
+	return &Process{
 		name:    name,
 		args:    args,
 		status:  StatusCreated,
