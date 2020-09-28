@@ -3,3 +3,5 @@ example_process/example
 coverage.out
 cmd/logs
 cmd/cmd
+cmd/processes.txt
+processes.txt

@@ -1,18 +1,27 @@
 package process
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path"
+	"strings"
 	"time"
 )
 
+type ManagerConfig struct {
+	LogsFolder        string
+	RenewOldProcesses bool
+	ProcessesListFile string
+}
+
 type Manager struct {
-	processes  []*ManagerProcess
-	logsFolder string
-	signals    chan os.Signal
+	ManagerConfig
+
+	processes         []*ManagerProcess
+	signals           chan os.Signal
+	renewOldProcesses bool
 }
 
 type ManagerProcess struct {
@@ -26,7 +35,7 @@ func (m *ManagerProcess) LogPath() string {
 }
 
 func (m *Manager) AddProcess(name string, args ...string) (*ManagerProcess, error) {
-	logFilePath := fmt.Sprintf("%s/%s-%s.log", m.logsFolder, time.Now().Format("2006-01-02"), name)
+	logFilePath := fmt.Sprintf("%s/%s-%s.log", m.LogsFolder, time.Now().Format("2006-01-02"), name)
 	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		return nil, err
@@ -74,7 +83,26 @@ func (m *Manager) TerminateProcess(pid int) error {
 	return errors.New("process with such pid not found")
 }
 
+//ShutDown - kill all processes, flush logs and save process state for renewal
 func (m *Manager) ShutDown() error {
+	if m.RenewOldProcesses {
+		procFile, err := os.Create(m.ProcessesListFile)
+		if err != nil {
+			return err
+		}
+
+		for _, proc := range m.processes {
+			if _, err := procFile.WriteString(
+				fmt.Sprintf("%s %s\n", proc.Name(), strings.Join(proc.Args(), " "))); err != nil {
+				return err
+			}
+		}
+
+		if err := procFile.Close(); err != nil {
+			return err
+		}
+	}
+
 	for _, proc := range m.processes {
 		proc.Terminate()
 	}
@@ -82,27 +110,53 @@ func (m *Manager) ShutDown() error {
 	return nil
 }
 
-func (m *Manager) listenSignals() {
-	<-m.signals
-	m.ShutDown()
+func (m *Manager) renewProcesses() error {
+	if m.RenewOldProcesses && m.ProcessesListFile != "" {
+		f, err := os.Open(m.ProcessesListFile)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			cmd := strings.Split(scanner.Text(), " ")
+			var args []string
+			if len(cmd) > 1 {
+				args = cmd[1:]
+			}
+
+			if _, err := m.AddProcess(cmd[0], args...); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
-func CreateManager(logsFolder string) (*Manager, error) {
-	logsFolder = path.Clean(logsFolder)
+//CreateManager init main library structure
+func CreateManager(config ManagerConfig) (*Manager, error) {
+	config.LogsFolder = path.Clean(config.LogsFolder)
+	config.ProcessesListFile = path.Clean(config.ProcessesListFile)
 
-	if _, err := os.Stat(logsFolder); err != nil {
+	if config.ProcessesListFile == "" || config.ProcessesListFile == "." {
+		config.ProcessesListFile = "processes.txt"
+	}
+
+	if _, err := os.Stat(config.LogsFolder); err != nil {
 		return nil, err
 	}
 
 	manager := Manager{
-		logsFolder: logsFolder,
-		processes:  []*ManagerProcess{},
-		signals:    make(chan os.Signal, 1),
+		ManagerConfig: config,
+		processes:     []*ManagerProcess{},
+		signals:       make(chan os.Signal, 1),
 	}
 
-	signal.Notify(manager.signals, os.Interrupt, os.Kill)
-
-	go manager.listenSignals()
+	if err := manager.renewProcesses(); err != nil {
+		return nil, err
+	}
 
 	return &manager, nil
 }

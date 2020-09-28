@@ -6,7 +6,7 @@ import (
 )
 
 func TestCreateManager(t *testing.T) {
-	manager, err := CreateManager("logs")
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestCreateManager(t *testing.T) {
 }
 
 func TestManagerProcess_Restart(t *testing.T) {
-	manager, err := CreateManager("logs")
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,8 +31,6 @@ func TestManagerProcess_Restart(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid1 := proc.PID()
-	t.Logf("pid1 %d\n", pid1)
-
 	time.Sleep(time.Millisecond * 2500)
 
 	pid2 := proc.PID()
@@ -42,8 +40,38 @@ func TestManagerProcess_Restart(t *testing.T) {
 	}
 }
 
-func TestManager_GetProcesses(t *testing.T) {
-	manager, err := CreateManager("logs")
+func TestManager_RenewProcesses(t *testing.T) {
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "logs", RenewOldProcesses: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = manager.AddProcess("sleep", "10")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.ShutDown(); err != nil {
+		t.Fatal(err)
+	}
+
+	manager, err = CreateManager(ManagerConfig{LogsFolder: "logs", RenewOldProcesses: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processes := manager.GetProcesses()
+	if len(processes) == 0 {
+		t.Fatal("no renewed processes")
+	}
+
+	if err := manager.ShutDown(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManager_GetProcessesTerminateProcess(t *testing.T) {
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +99,7 @@ func TestManager_GetProcesses(t *testing.T) {
 }
 
 func TestCreateManagerLogs(t *testing.T) {
-	manager, err := CreateManager("logs")
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +110,10 @@ func TestCreateManagerLogs(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond * 500)
+
+	if proc.LogPath() == "" {
+		t.Fatal("no log path was set")
+	}
 
 	output, err := proc.StdOut()
 	if err != nil {
@@ -98,12 +130,12 @@ func TestCreateManagerLogs(t *testing.T) {
 }
 
 func TestManagerFailures(t *testing.T) {
-	_, err := CreateManager("/mike/")
+	_, err := CreateManager(ManagerConfig{LogsFolder: "/mike/"})
 	if err == nil {
 		t.Fatal("no error on wrong folder")
 	}
 
-	manager, err := CreateManager("/proc")
+	manager, err := CreateManager(ManagerConfig{LogsFolder: "/proc"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +144,7 @@ func TestManagerFailures(t *testing.T) {
 		t.Fatal("no error on wrong folder path")
 	}
 
-	manager, err = CreateManager("logs")
+	manager, err = CreateManager(ManagerConfig{LogsFolder: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,20 +13,22 @@ import (
 )
 
 var (
-	logsFolder string
-	signals    chan os.Signal
-	commands   map[string]Command
+	logsFolder, processesFile string
+	signals                   chan os.Signal
+	commands                  map[string]Command
+	renewOldProcesses         bool
 )
 
 func init() {
 	flag.StringVar(&logsFolder, "l", "logs", "logs folder location (default: './logs')")
+	flag.BoolVar(&renewOldProcesses, "r", true, "restart old processes after manager start")
+	flag.StringVar(&processesFile, "p", "processes.txt", "file to store processes to be restored")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	signals = make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, os.Kill)
-	go exitWait()
 
 	commands = map[string]Command{
 		"h": help{},
@@ -37,14 +39,35 @@ func init() {
 	}
 }
 
-func exitWait() {
+func exitWait(manager *process.Manager) {
 	<-signals
 	log.Println("force exit")
-	os.Exit(0)
+	if err := manager.ShutDown(); err != nil {
+		log.Println(err)
+	}
 }
 
 type Command interface {
 	Exec(scanner *bufio.Scanner, manager *process.Manager) error
+}
+
+func scanInput(manager *process.Manager) {
+	fmt.Print("Process Manager, type 'h' for help\nCommand: ")
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for scanner.Scan() {
+		s := strings.TrimSpace(scanner.Text())
+
+		if cmd, ok := commands[s]; ok {
+			if err := cmd.Exec(scanner, manager); err != nil {
+				fmt.Println(err)
+			}
+		} else {
+			fmt.Println("Command not found, type 'h' for help")
+		}
+
+		fmt.Print("Command: ")
+	}
 }
 
 func main() {
@@ -54,25 +77,17 @@ func main() {
 		}
 	}
 
-	p, err := process.CreateManager("logs")
+	manager, err := process.CreateManager(process.ManagerConfig{
+		LogsFolder:        logsFolder,
+		RenewOldProcesses: renewOldProcesses,
+		ProcessesListFile: processesFile,
+	})
+
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	fmt.Print("Process Manager, type 'h' for help\nCommand: ")
-	scanner := bufio.NewScanner(os.Stdin)
+	go scanInput(manager)
 
-	for scanner.Scan() {
-		s := strings.TrimSpace(scanner.Text())
-
-		if cmd, ok := commands[s]; ok {
-			if err := cmd.Exec(scanner, p); err != nil {
-				fmt.Println(err)
-			}
-		} else {
-			fmt.Println("Command not found, type 'h' for help")
-		}
-
-		fmt.Print("Command: ")
-	}
+	exitWait(manager)
 }
