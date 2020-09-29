@@ -1,6 +1,7 @@
 # Process Manager
 
-Library that provides APIs to run external processes
+Library that provides APIs to run external processes  
+
 [technical task](task.md)
 
 Main library interface is located at `Manager` structure. To init this structure use `CreateManager` function.
