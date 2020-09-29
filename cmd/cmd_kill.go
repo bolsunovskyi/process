@@ -12,20 +12,29 @@ import (
 
 type kill struct{}
 
-func (kill) Exec(scanner *bufio.Scanner, manager *process.Manager) error {
+func scanPid(scanner *bufio.Scanner) (int, error) {
 	fmt.Print("Enter process PID: ")
 	if !scanner.Scan() {
-		return errors.New("wrong process PID")
+		return 0, errors.New("wrong process PID")
 	}
 
 	cmd := strings.TrimSpace(scanner.Text())
 	if cmd == "" {
-		return errors.New("wrong process PID")
+		return 0, errors.New("wrong process PID")
 	}
 
 	pid, err := strconv.Atoi(cmd)
 	if err != nil {
-		return errors.New("pid must be a number")
+		return 0, errors.New("pid must be a number")
+	}
+
+	return pid, nil
+}
+
+func (kill) Exec(scanner *bufio.Scanner, manager *process.Manager) error {
+	pid, err := scanPid(scanner)
+	if err != nil {
+		return err
 	}
 
 	if err := manager.TerminateProcess(pid); err != nil {

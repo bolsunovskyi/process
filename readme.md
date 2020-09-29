@@ -9,6 +9,7 @@ Main library methods:
 - `TerminateProcess` - kill process
 - `GetProcesses` - get all processes
 - `Shutdown` - kill all processes and flush logs
+- `GetProcess` - get process by pid
 
 Library config is represented in `ManagerConfig` structure:
 

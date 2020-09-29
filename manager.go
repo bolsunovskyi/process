@@ -35,7 +35,8 @@ func (m *ManagerProcess) LogPath() string {
 }
 
 func (m *Manager) AddProcess(name string, args ...string) (*ManagerProcess, error) {
-	logFilePath := fmt.Sprintf("%s/%s-%s.log", m.LogsFolder, time.Now().Format("2006-01-02"), name)
+	logFilePath := fmt.Sprintf("%s/%s-%s.log", m.LogsFolder, time.Now().Format("2006-01-02"),
+		path.Base(name))
 	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		return nil, err
@@ -81,6 +82,17 @@ func (m *Manager) TerminateProcess(pid int) error {
 	}
 
 	return errors.New("process with such pid not found")
+}
+
+//GetProcess get process by pid
+func (m *Manager) GetProcess(pid int) (*ManagerProcess, error) {
+	for _, p := range m.processes {
+		if pid == p.PID() {
+			return p, nil
+		}
+	}
+
+	return nil, errors.New("process with such pid not found")
 }
 
 //ShutDown - kill all processes, flush logs and save process state for renewal

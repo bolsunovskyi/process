@@ -14,7 +14,7 @@ var (
 
 func init() {
 	flag.UintVar(&crashTimeout, "ct", 0, "crash timeout (seconds)")
-	flag.UintVar(&messageInterval, "i", 0, "message interval")
+	flag.UintVar(&messageInterval, "i", 1, "message interval")
 	flag.BoolVar(&enableStdOut, "o", true, "enable stdout messages (default true)")
 	flag.BoolVar(&enableStdErr, "e", true, "enable stderr messages (default true)")
 	flag.BoolVar(&successExit, "s", false, "perform one cycle iteration and exit")

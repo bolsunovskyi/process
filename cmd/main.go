@@ -36,6 +36,7 @@ func init() {
 		"r": run{},
 		"l": list{},
 		"k": kill{},
+		"p": printLog{},
 	}
 }
 
