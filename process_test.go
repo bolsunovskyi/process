@@ -18,7 +18,7 @@ func (BufferSeeker) Seek(offset int64, whence int) (int64, error) {
 func TestCreateProcessNoRestart(t *testing.T) {
 	var stdOut, stdErr BufferSeeker
 	p := CreateProcess(&stdOut, &stdErr, "uname", "-r")
-	p.Restart = false
+	p.SetRestart(false)
 
 	if p.Name() != "uname" {
 		t.Fatal("wrong name in getter")
@@ -54,7 +54,7 @@ func TestCreateProcessNoRestart(t *testing.T) {
 func TestCreateProcessStdErr(t *testing.T) {
 	var stdOut, stdErr BufferSeeker
 	p := CreateProcess(&stdOut, &stdErr, "date", "-x")
-	p.Restart = false
+	p.SetRestart(false)
 
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestCreateProcessFiles(t *testing.T) {
 	}
 
 	p := CreateProcess(stdOut, stdErr, "uname", "-r")
-	p.Restart = false
+	p.SetRestart(false)
 
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestCreateProcessFiles(t *testing.T) {
 	}
 
 	p = CreateProcess(stdOut, stdErr, "date", "-x")
-	p.Restart = false
+	p.SetRestart(false)
 
 	if err := p.Start(); err != nil {
 		t.Fatal(err)

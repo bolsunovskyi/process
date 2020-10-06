@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type Manager struct {
 	ManagerConfig
 
 	processes         []*ManagerProcess
+	processesLock     sync.RWMutex
 	signals           chan os.Signal
 	renewOldProcesses bool
 }
@@ -55,7 +57,9 @@ func (m *Manager) AddProcess(name string, args ...string) (*ManagerProcess, erro
 		return nil, err
 	}
 
+	m.processesLock.Lock()
 	m.processes = append(m.processes, &mp)
+	m.processesLock.Unlock()
 
 	return &mp, nil
 }
@@ -65,6 +69,9 @@ func (m *Manager) GetProcesses() []*ManagerProcess {
 }
 
 func (m *Manager) TerminateProcess(pid int) error {
+	m.processesLock.Lock()
+	defer m.processesLock.Unlock()
+
 	for i, proc := range m.processes {
 		if proc.PID() == pid {
 			if err := proc.Terminate(); err != nil {
@@ -86,6 +93,9 @@ func (m *Manager) TerminateProcess(pid int) error {
 
 //GetProcess get process by pid
 func (m *Manager) GetProcess(pid int) (*ManagerProcess, error) {
+	m.processesLock.RLock()
+	defer m.processesLock.Unlock()
+
 	for _, p := range m.processes {
 		if pid == p.PID() {
 			return p, nil
@@ -97,6 +107,9 @@ func (m *Manager) GetProcess(pid int) (*ManagerProcess, error) {
 
 //ShutDown - kill all processes, flush logs and save process state for renewal
 func (m *Manager) ShutDown() error {
+	m.processesLock.RLock()
+	defer m.processesLock.RUnlock()
+
 	if m.RenewOldProcesses {
 		procFile, err := os.Create(m.ProcessesListFile)
 		if err != nil {

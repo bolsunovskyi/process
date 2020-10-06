@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os/exec"
+	"sync"
 	"time"
 
 	"errors"
@@ -16,15 +17,31 @@ const (
 )
 
 type Process struct {
-	name    string
-	args    []string
-	stdErr  io.ReadWriteSeeker
-	stdOut  io.ReadWriteSeeker
-	status  string
-	cmd     *exec.Cmd
-	exit    chan error
-	started time.Time
-	Restart bool
+	name        string
+	args        []string
+	stdErr      io.ReadWriteSeeker
+	stdOut      io.ReadWriteSeeker
+	status      string
+	statusLock  sync.RWMutex
+	cmd         *exec.Cmd
+	cmdLock     sync.RWMutex
+	exit        chan error
+	started     time.Time
+	startedLock sync.RWMutex
+	restart     bool
+	restartLock sync.RWMutex
+}
+
+func (p *Process) SetRestart(restart bool) {
+	p.restartLock.Lock()
+	p.restart = restart
+	p.restartLock.Unlock()
+}
+
+func (p *Process) Restart() bool {
+	p.restartLock.RLock()
+	defer p.restartLock.RUnlock()
+	return p.restart
 }
 
 func fileToString(f io.ReadWriteSeeker) (string, error) {
@@ -47,6 +64,8 @@ func (p *Process) Args() []string {
 }
 
 func (p *Process) Started() time.Time {
+	p.startedLock.RLock()
+	defer p.startedLock.RUnlock()
 	return p.started
 }
 
@@ -59,8 +78,13 @@ func (p *Process) StdErr() (string, error) {
 }
 
 func (p *Process) watch() {
+	p.cmdLock.RLock()
 	err := p.cmd.Wait()
+	p.cmdLock.RUnlock()
+
+	p.statusLock.Lock()
 	p.status = StatusExit
+	p.statusLock.Unlock()
 
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if !exitErr.Exited() {
@@ -69,7 +93,7 @@ func (p *Process) watch() {
 		}
 	}
 
-	if !p.Restart {
+	if !p.Restart() {
 		p.exit <- err
 		return
 	}
@@ -84,23 +108,32 @@ func (p *Process) Wait() error {
 }
 
 func (p *Process) PID() int {
+	p.cmdLock.RLock()
+	defer p.cmdLock.RUnlock()
 	return p.cmd.Process.Pid
 }
 
 func (p *Process) Status() string {
-	return p.status
+	p.statusLock.RLock()
+	s := p.status
+	p.statusLock.RUnlock()
+	return s
 }
 
 func (p *Process) Terminate() error {
-	if p.status == StatusRunning {
-		p.Restart = false
-		return p.cmd.Process.Kill()
+	if p.Status() == StatusRunning {
+		p.SetRestart(false)
+		p.cmdLock.RLock()
+		err := p.cmd.Process.Kill()
+		p.cmdLock.RUnlock()
+		return err
 	}
 
 	return errors.New("process is not running")
 }
 
 func (p *Process) Start() error {
+	p.cmdLock.Lock()
 	p.cmd = exec.Command(p.name, p.args...)
 	p.cmd.Stderr = p.stdErr
 	p.cmd.Stdout = p.stdOut
@@ -109,8 +142,15 @@ func (p *Process) Start() error {
 		return err
 	}
 
+	p.cmdLock.Unlock()
+
+	p.statusLock.Lock()
 	p.status = StatusRunning
+	p.statusLock.Unlock()
+
+	p.startedLock.Lock()
 	p.started = time.Now()
+	p.startedLock.Unlock()
 
 	go p.watch()
 
@@ -122,7 +162,7 @@ func CreateProcess(stdOut, stdErr io.ReadWriteSeeker, name string, args ...strin
 		name:    name,
 		args:    args,
 		status:  StatusCreated,
-		Restart: true,
+		restart: true,
 		exit:    make(chan error),
 		stdErr:  stdErr,
 		stdOut:  stdOut,
